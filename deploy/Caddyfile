@@ -1,0 +1,14 @@
+# Alternative to nginx: Caddy gets and renews the HTTPS certificate by itself.
+# Replace alexa.example.com with your subdomain.
+
+alexa.example.com {
+	handle /alexa {
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle {
+		respond 404
+	}
+}

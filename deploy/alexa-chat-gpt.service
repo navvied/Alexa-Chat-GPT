@@ -1,0 +1,33 @@
+# /etc/systemd/system/alexa-chat-gpt.service
+# Check the node path with `which node` and adjust ExecStart if it differs.
+
+[Unit]
+Description=Alexa ChatGPT skill endpoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=alexa
+Group=alexa
+WorkingDirectory=/opt/alexa-chat-gpt
+ExecStart=/usr/bin/node --env-file=/opt/alexa-chat-gpt/.env src/main.js
+Restart=on-failure
+RestartSec=3
+
+# Hardening: the service only needs to read its own files and make network calls.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+{
+  "name": "alexa-chat-gpt",
+  "version": "1.0.0",
+  "description": "Custom Alexa skill backend that answers with ChatGPT (OpenAI API), self-hosted on your own server.",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/main.js",
+    "test": "node --test test/"
+  }
+}
