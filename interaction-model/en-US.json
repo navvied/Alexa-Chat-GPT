@@ -3,13 +3,43 @@
     "languageModel": {
       "invocationName": "chat buddy",
       "intents": [
-        { "name": "AMAZON.CancelIntent", "samples": [] },
-        { "name": "AMAZON.HelpIntent", "samples": [] },
-        { "name": "AMAZON.StopIntent", "samples": [] },
-        { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
-        { "name": "AMAZON.FallbackIntent", "samples": [] },
-        { "name": "AMAZON.YesIntent", "samples": [] },
-        { "name": "AMAZON.NoIntent", "samples": [] },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.YesIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NoIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StartOverIntent",
+          "samples": [
+            "new conversation",
+            "start a new conversation",
+            "new topic",
+            "let's start over"
+          ]
+        },
         {
           "name": "ContinueIntent",
           "slots": [],
@@ -27,54 +57,221 @@
         },
         {
           "name": "ChatIntent",
-          "slots": [{ "name": "query", "type": "CatchAllPhrase" }],
-          "samples": ["{query}"]
+          "slots": [
+            {
+              "name": "query",
+              "type": "CatchAllPhrase"
+            }
+          ],
+          "samples": [
+            "{query}"
+          ]
         }
       ],
       "types": [
         {
           "name": "CatchAllPhrase",
           "values": [
-            { "name": { "value": "why" } },
-            { "name": { "value": "tell me a joke" } },
-            { "name": { "value": "who are you" } },
-            { "name": { "value": "what is love" } },
-            { "name": { "value": "how far is the moon" } },
-            { "name": { "value": "what should i cook tonight" } },
-            { "name": { "value": "explain black holes to a ten year old" } },
-            { "name": { "value": "what is the capital of australia" } },
-            { "name": { "value": "how do i get better sleep" } },
-            { "name": { "value": "translate good morning into japanese" } },
-            { "name": { "value": "give me three ideas for a birthday present for my mother" } },
-            { "name": { "value": "what is the difference between a virus and a bacteria" } },
-            { "name": { "value": "write a short poem about the rain in jakarta" } },
-            { "name": { "value": "how many calories are in a bowl of fried rice" } },
-            { "name": { "value": "summarize the story of romeo and juliet" } },
-            { "name": { "value": "can you help me plan a weekend trip to bali" } },
-            { "name": { "value": "what happened in the year nineteen forty five" } },
-            { "name": { "value": "is it healthy to drink coffee every day" } },
-            { "name": { "value": "how does a stock market work" } },
-            { "name": { "value": "what are the rules of chess" } },
-            { "name": { "value": "convert one hundred dollars to rupiah" } },
-            { "name": { "value": "recommend a good science fiction book" } },
-            { "name": { "value": "why is the sky blue" } },
-            { "name": { "value": "help me write a message to my boss saying i am sick today" } },
-            { "name": { "value": "what is the meaning of life" } },
-            { "name": { "value": "how do airplanes stay in the air" } },
-            { "name": { "value": "teach me a new english word" } },
-            { "name": { "value": "what should i name my new cat" } },
-            { "name": { "value": "compare electric cars and petrol cars" } },
-            { "name": { "value": "how long should i boil an egg" } },
-            { "name": { "value": "tell me something interesting about octopuses" } },
-            { "name": { "value": "what does compound interest mean" } },
-            { "name": { "value": "give me a workout i can do at home without equipment" } },
-            { "name": { "value": "and what about the second one" } },
-            { "name": { "value": "make it shorter" } },
-            { "name": { "value": "explain that again more simply" } },
-            { "name": { "value": "who invented the light bulb and when" } },
-            { "name": { "value": "what is a good way to learn programming" } },
-            { "name": { "value": "tell me a bedtime story about a brave little dragon" } },
-            { "name": { "value": "do you think it will rain tomorrow" } }
+            {
+              "name": {
+                "value": "why"
+              }
+            },
+            {
+              "name": {
+                "value": "tell me a joke"
+              }
+            },
+            {
+              "name": {
+                "value": "who are you"
+              }
+            },
+            {
+              "name": {
+                "value": "what is love"
+              }
+            },
+            {
+              "name": {
+                "value": "how far is the moon"
+              }
+            },
+            {
+              "name": {
+                "value": "what should i cook tonight"
+              }
+            },
+            {
+              "name": {
+                "value": "explain black holes to a ten year old"
+              }
+            },
+            {
+              "name": {
+                "value": "what is the capital of australia"
+              }
+            },
+            {
+              "name": {
+                "value": "how do i get better sleep"
+              }
+            },
+            {
+              "name": {
+                "value": "translate good morning into japanese"
+              }
+            },
+            {
+              "name": {
+                "value": "give me three ideas for a birthday present for my mother"
+              }
+            },
+            {
+              "name": {
+                "value": "what is the difference between a virus and a bacteria"
+              }
+            },
+            {
+              "name": {
+                "value": "write a short poem about the rain in jakarta"
+              }
+            },
+            {
+              "name": {
+                "value": "how many calories are in a bowl of fried rice"
+              }
+            },
+            {
+              "name": {
+                "value": "summarize the story of romeo and juliet"
+              }
+            },
+            {
+              "name": {
+                "value": "can you help me plan a weekend trip to bali"
+              }
+            },
+            {
+              "name": {
+                "value": "what happened in the year nineteen forty five"
+              }
+            },
+            {
+              "name": {
+                "value": "is it healthy to drink coffee every day"
+              }
+            },
+            {
+              "name": {
+                "value": "how does a stock market work"
+              }
+            },
+            {
+              "name": {
+                "value": "what are the rules of chess"
+              }
+            },
+            {
+              "name": {
+                "value": "convert one hundred dollars to rupiah"
+              }
+            },
+            {
+              "name": {
+                "value": "recommend a good science fiction book"
+              }
+            },
+            {
+              "name": {
+                "value": "why is the sky blue"
+              }
+            },
+            {
+              "name": {
+                "value": "help me write a message to my boss saying i am sick today"
+              }
+            },
+            {
+              "name": {
+                "value": "what is the meaning of life"
+              }
+            },
+            {
+              "name": {
+                "value": "how do airplanes stay in the air"
+              }
+            },
+            {
+              "name": {
+                "value": "teach me a new english word"
+              }
+            },
+            {
+              "name": {
+                "value": "what should i name my new cat"
+              }
+            },
+            {
+              "name": {
+                "value": "compare electric cars and petrol cars"
+              }
+            },
+            {
+              "name": {
+                "value": "how long should i boil an egg"
+              }
+            },
+            {
+              "name": {
+                "value": "tell me something interesting about octopuses"
+              }
+            },
+            {
+              "name": {
+                "value": "what does compound interest mean"
+              }
+            },
+            {
+              "name": {
+                "value": "give me a workout i can do at home without equipment"
+              }
+            },
+            {
+              "name": {
+                "value": "and what about the second one"
+              }
+            },
+            {
+              "name": {
+                "value": "make it shorter"
+              }
+            },
+            {
+              "name": {
+                "value": "explain that again more simply"
+              }
+            },
+            {
+              "name": {
+                "value": "who invented the light bulb and when"
+              }
+            },
+            {
+              "name": {
+                "value": "what is a good way to learn programming"
+              }
+            },
+            {
+              "name": {
+                "value": "tell me a bedtime story about a brave little dragon"
+              }
+            },
+            {
+              "name": {
+                "value": "do you think it will rain tomorrow"
+              }
+            }
           ]
         }
       ]

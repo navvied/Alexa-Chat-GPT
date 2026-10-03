@@ -1,39 +1,46 @@
-// In-memory conversations, one per Alexa session. Kept in least-recently-used order so the
-// oldest is always first: idle and surplus conversations are evicted from the front.
+// In-memory conversations, one per speaker. A conversation outlives the Alexa session (the
+// microphone closes after a few silent seconds) and ends after a period without questions,
+// or when the speaker asks to start over.
+//
+// Kept in least-recently-used order, so the oldest is always first: idle and surplus
+// conversations are evicted from the front.
+
+import { randomUUID } from 'node:crypto';
 
 export class ConversationStore {
-  constructor({ maxHistoryTurns, idleMs, maxSessions, now = Date.now }) {
+  constructor({ maxHistoryTurns, idleMs, maxConversations, now = Date.now }) {
     this.maxMessages = maxHistoryTurns * 2;
     this.idleMs = idleMs;
-    this.maxSessions = maxSessions;
+    this.maxConversations = maxConversations;
     this.now = now;
-    this.sessions = new Map();
+    this.conversations = new Map();
   }
 
-  /** Returns the conversation for a session, creating it if needed. */
-  get(sessionId) {
+  /** Returns the speaker's current conversation, starting a new one if needed. */
+  get(key) {
     this.evictIdle();
-    let conversation = this.sessions.get(sessionId);
+    let conversation = this.conversations.get(key);
     if (conversation) {
-      this.sessions.delete(sessionId);
+      this.conversations.delete(key);
     } else {
-      conversation = { history: [], pending: null };
+      conversation = { id: randomUUID(), history: [], pending: null };
     }
     conversation.lastSeen = this.now();
-    this.sessions.set(sessionId, conversation);
-    while (this.sessions.size > this.maxSessions) this.remove(this.sessions.keys().next().value);
+    this.conversations.set(key, conversation);
+    while (this.conversations.size > this.maxConversations) this.remove(this.conversations.keys().next().value);
     return conversation;
   }
 
-  peek(sessionId) {
-    return this.sessions.get(sessionId);
+  peek(key) {
+    this.evictIdle();
+    return this.conversations.get(key);
   }
 
-  remove(sessionId) {
-    const conversation = this.sessions.get(sessionId);
+  remove(key) {
+    const conversation = this.conversations.get(key);
     if (!conversation) return;
     conversation.pending?.cancel();
-    this.sessions.delete(sessionId);
+    this.conversations.delete(key);
   }
 
   /** Adds a question and the answer the user actually heard. */
@@ -47,13 +54,13 @@ export class ConversationStore {
 
   evictIdle() {
     const cutoff = this.now() - this.idleMs;
-    for (const [sessionId, conversation] of this.sessions) {
+    for (const [key, conversation] of this.conversations) {
       if (conversation.lastSeen > cutoff) break;
-      this.remove(sessionId);
+      this.remove(key);
     }
   }
 
   get size() {
-    return this.sessions.size;
+    return this.conversations.size;
   }
 }

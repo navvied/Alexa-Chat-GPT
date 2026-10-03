@@ -2,15 +2,15 @@
 // Request and response format:
 // https://developer.amazon.com/en-US/docs/alexa/custom-skills/request-and-response-json-reference.html
 
+import { createHash } from 'node:crypto';
 import { cardText, replySsml, ssml } from './speech.js';
-
-const CARD_TITLE = 'ChatGPT';
 
 export const SPEECH = {
   launch: 'Hi! What would you like to ask?',
   launchReprompt: 'You can ask me anything.',
   help: 'You can ask me anything, like "explain how vaccines work" or "give me a dinner idea". '
-    + 'I remember what we talked about until you say stop. What would you like to ask?',
+    + 'I keep our conversation going for a while, so you can ask follow-up questions. '
+    + 'Say "start over" for a new topic, or "stop" to finish. What would you like to ask?',
   helpReprompt: 'What would you like to ask?',
   followUp: 'Anything else?',
   thinking: 'Let me think.',
@@ -18,6 +18,7 @@ export const SPEECH = {
   pendingReprompt: 'Say "continue" to hear the answer.',
   stillPending: 'Still working on it. Say "continue" again in a few seconds.',
   nothingPending: 'What would you like to ask?',
+  startOver: "Okay, let's start fresh. What would you like to ask?",
   notHeard: "Sorry, I didn't catch that. Could you say it again?",
   failed: "Sorry, I couldn't get an answer just now. Please try again.",
   goodbye: 'Goodbye!',
@@ -33,10 +34,25 @@ function normalize(text) {
   return text.toLowerCase().replace(/[^\p{L}\p{N}' ]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Who is speaking: the recognized voice profile when there is one, otherwise the Amazon
+ * account. Hashed, so the raw Amazon ids never leave this service.
+ */
+export function speakerKey(envelope) {
+  const system = envelope.context?.System ?? {};
+  const id = system.person?.personId
+    ?? system.user?.userId
+    ?? envelope.session?.user?.userId
+    ?? envelope.session?.sessionId
+    ?? envelope.request?.requestId
+    ?? 'unknown';
+  return `alexa:${createHash('sha256').update(id).digest('hex').slice(0, 32)}`;
+}
+
 function respond({ speech, reprompt, card, end = false }) {
   const response = { outputSpeech: { type: 'SSML', ssml: speech }, shouldEndSession: end };
   if (reprompt) response.reprompt = { outputSpeech: { type: 'SSML', ssml: ssml(reprompt) } };
-  if (card) response.card = { type: 'Simple', title: CARD_TITLE, content: card };
+  if (card) response.card = { type: 'Simple', title: 'ChatGPT', content: card };
   return { version: '1.0', response };
 }
 
@@ -50,19 +66,13 @@ const EMPTY = { version: '1.0', response: {} };
  * @param {(envelope: object, text: string) => void} [deps.progressive] speaks while we wait
  */
 export function createAlexaHandler({ assistant, config, log, progressive = () => {} }) {
-  function toResponse(result, sessionId) {
-    if (result.status === 'answered') {
-      return respond({
-        speech: replySsml(result.answer, config.maxSpeechChars),
-        reprompt: SPEECH.followUp,
-        card: cardText(result.question, result.answer),
-      });
-    }
-    if (result.status === 'pending') {
-      log.info('answer pending', { session: sessionId.slice(-8) });
-      return say(SPEECH.pending, SPEECH.pendingReprompt);
-    }
-    return say(SPEECH.nothingPending, SPEECH.launchReprompt);
+  function answered(result) {
+    if (config.logConversations) log.info('answer', { text: result.answer });
+    return respond({
+      speech: replySsml(result.answer, config.maxSpeechChars),
+      reprompt: SPEECH.followUp,
+      card: cardText(result.question, result.answer),
+    });
   }
 
   async function run(envelope, action) {
@@ -78,34 +88,38 @@ export function createAlexaHandler({ assistant, config, log, progressive = () =>
     }
   }
 
-  async function chat(envelope, sessionId, question) {
+  async function chat(envelope, speaker, question) {
     if (config.logConversations) log.info('question', { text: question });
-    const result = await run(envelope, (onSlow) => assistant.ask(sessionId, question, { onSlow }));
-    if (result.status === 'failed') return say(SPEECH.failed, SPEECH.helpReprompt);
-    if (config.logConversations && result.status === 'answered') log.info('answer', { text: result.answer });
-    return toResponse(result, sessionId);
+    const result = await run(envelope, (onSlow) => assistant.ask(speaker, question, { onSlow }));
+    if (result.status === 'answered') return answered(result);
+    if (result.status === 'pending') return say(SPEECH.pending, SPEECH.pendingReprompt);
+    return say(SPEECH.failed, SPEECH.helpReprompt);
   }
 
-  async function resume(envelope, sessionId) {
-    const result = await run(envelope, (onSlow) => assistant.resume(sessionId, { onSlow }));
-    if (result.status === 'failed') return say(SPEECH.failed, SPEECH.helpReprompt);
+  /** Delivers the pending answer; `none` decides what to say when there is nothing pending. */
+  async function resume(envelope, speaker, none) {
+    const result = await run(envelope, (onSlow) => assistant.resume(speaker, { onSlow }));
+    if (result.status === 'answered') return answered(result);
     if (result.status === 'pending') return say(SPEECH.stillPending, SPEECH.pendingReprompt);
-    if (config.logConversations && result.status === 'answered') log.info('answer', { text: result.answer });
-    return toResponse(result, sessionId);
+    if (result.status === 'none') return none();
+    return say(SPEECH.failed, SPEECH.helpReprompt);
   }
 
   return {
     async handle(envelope) {
       const request = envelope.request ?? {};
-      const sessionId = envelope.session?.sessionId ?? request.requestId ?? 'no-session';
+      const speaker = speakerKey(envelope);
 
       switch (request.type) {
         case 'LaunchRequest':
+          // Opening the skill again also collects an answer that was still on its way.
+          if (assistant.hasPending(speaker)) {
+            return resume(envelope, speaker, () => say(SPEECH.launch, SPEECH.launchReprompt));
+          }
           return say(SPEECH.launch, SPEECH.launchReprompt);
 
         case 'SessionEndedRequest':
           if (request.error) log.warn('session ended with an error', { reason: request.reason, error: request.error });
-          assistant.end(sessionId);
           return EMPTY;
 
         case 'IntentRequest':
@@ -116,21 +130,24 @@ export function createAlexaHandler({ assistant, config, log, progressive = () =>
           return EMPTY;
       }
 
-      const intent = request.intent?.name;
-      switch (intent) {
+      switch (request.intent?.name) {
         case 'ChatIntent': {
           const question = request.intent.slots?.query?.value?.trim();
           if (!question) return say(SPEECH.notHeard, SPEECH.helpReprompt);
-          if (CONTINUE_PHRASES.has(normalize(question)) && assistant.hasPending(sessionId)) {
-            return resume(envelope, sessionId);
+          if (CONTINUE_PHRASES.has(normalize(question)) && assistant.hasPending(speaker)) {
+            return resume(envelope, speaker, () => say(SPEECH.nothingPending, SPEECH.launchReprompt));
           }
-          return chat(envelope, sessionId, question);
+          return chat(envelope, speaker, question);
         }
 
         case 'ContinueIntent':
         case 'AMAZON.YesIntent':
         case 'AMAZON.ResumeIntent':
-          return resume(envelope, sessionId);
+          return resume(envelope, speaker, () => say(SPEECH.nothingPending, SPEECH.launchReprompt));
+
+        case 'AMAZON.StartOverIntent':
+          assistant.startOver(speaker);
+          return say(SPEECH.startOver, SPEECH.helpReprompt);
 
         case 'AMAZON.HelpIntent':
           return say(SPEECH.help, SPEECH.helpReprompt);
@@ -139,7 +156,8 @@ export function createAlexaHandler({ assistant, config, log, progressive = () =>
         case 'AMAZON.CancelIntent':
         case 'AMAZON.NoIntent':
         case 'AMAZON.PauseIntent':
-          assistant.end(sessionId);
+          // The conversation stays, so a follow-up a few minutes later still has context.
+          assistant.cancelPending(speaker);
           return respond({ speech: ssml(SPEECH.goodbye), end: true });
 
         case 'AMAZON.NavigateHomeIntent':

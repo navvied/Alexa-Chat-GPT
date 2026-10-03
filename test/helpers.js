@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../src/config.js';
+import { ConversationStore } from '../src/conversations.js';
 
 export const SKILL_ID = 'amzn1.ask.skill.11111111-2222-3333-4444-555555555555';
 
@@ -14,21 +15,33 @@ export function testConfig(overrides = {}) {
   };
 }
 
+export function testStore(config, now) {
+  return new ConversationStore({
+    maxHistoryTurns: config.maxHistoryTurns,
+    idleMs: config.conversationIdleMs,
+    maxConversations: config.maxConversations,
+    now,
+  });
+}
+
 let counter = 0;
 
-export function envelope(request, { sessionId = 'session-1', applicationId = SKILL_ID, timestamp = new Date() } = {}) {
+export function envelope(
+  request,
+  { sessionId = 'session-1', userId = 'user-1', personId, applicationId = SKILL_ID, timestamp = new Date() } = {},
+) {
   counter += 1;
+  const system = {
+    application: { applicationId },
+    user: { userId },
+    apiEndpoint: 'https://api.amazonalexa.com',
+    apiAccessToken: 'alexa-token',
+  };
+  if (personId) system.person = { personId };
   return {
     version: '1.0',
-    session: { new: false, sessionId, application: { applicationId }, user: { userId: 'user-1' } },
-    context: {
-      System: {
-        application: { applicationId },
-        user: { userId: 'user-1' },
-        apiEndpoint: 'https://api.amazonalexa.com',
-        apiAccessToken: 'alexa-token',
-      },
-    },
+    session: { new: false, sessionId, application: { applicationId }, user: { userId } },
+    context: { System: system },
     request: { requestId: `request-${counter}`, timestamp: timestamp.toISOString(), locale: 'en-US', ...request },
   };
 }
@@ -48,23 +61,29 @@ export const intent = (name, slots = {}, options) =>
 
 export const chatIntent = (query, options) => intent('ChatIntent', { query }, options);
 
-/** A fake chat client: answers come from `reply(messages)`, optionally after `delayMs`. */
-export function fakeChat(reply, { delayMs = 0 } = {}) {
+/**
+ * A fake chat client: answers come from `reply(messages, call)`, optionally after `delayMs`.
+ * Each call records the arguments and the messages an OpenAI client would have sent.
+ */
+export function fakeChat(reply, { delayMs = 0, keepsHistory = false } = {}) {
   const calls = [];
   return {
     calls,
-    async complete(messages, { signal } = {}) {
-      calls.push({ messages, signal });
+    keepsHistory,
+    async reply(args) {
+      const messages = [{ role: 'system', content: args.system }, ...args.history, { role: 'user', content: args.question }];
+      const call = { ...args, messages };
+      calls.push(call);
       if (delayMs) {
         await new Promise((resolve, reject) => {
           const timer = setTimeout(resolve, delayMs);
-          signal?.addEventListener('abort', () => {
+          args.signal?.addEventListener('abort', () => {
             clearTimeout(timer);
             reject(new Error('aborted'));
           });
         });
       }
-      return reply(messages);
+      return reply(messages, call);
     },
   };
 }

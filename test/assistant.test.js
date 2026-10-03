@@ -1,13 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssistant } from '../src/assistant.js';
-import { ConversationStore } from '../src/conversations.js';
-import { fakeChat, testConfig } from './helpers.js';
+import { fakeChat, testConfig, testStore } from './helpers.js';
 
-function setup({ reply = (messages) => `answer to: ${messages.at(-1).content}`, delayMs = 0, config = {} } = {}) {
+function setup({
+  reply = (messages) => `answer to: ${messages.at(-1).content}`,
+  delayMs = 0,
+  keepsHistory = false,
+  config = {},
+  now,
+} = {}) {
   const cfg = testConfig(config);
-  const chat = fakeChat(reply, { delayMs });
-  const store = new ConversationStore({ maxHistoryTurns: cfg.maxHistoryTurns, idleMs: cfg.sessionIdleMs, maxSessions: cfg.maxSessions });
+  const chat = fakeChat(reply, { delayMs, keepsHistory });
+  const store = testStore(cfg, now);
   const assistant = createAssistant({ chat, store, config: cfg, now: () => new Date('2026-10-03T05:00:00Z') });
   return { assistant, chat, store };
 }
@@ -27,11 +32,52 @@ test('a fast answer is returned and remembered for the next question', async () 
   ]);
 });
 
-test('sessions do not share history', async () => {
+test('every call carries the speaker and a stable conversation id', async () => {
+  const { assistant, chat } = setup();
+  await assistant.ask('alexa:speaker-1', 'q1');
+  await assistant.ask('alexa:speaker-1', 'q2');
+  await assistant.ask('alexa:speaker-2', 'q3');
+  assert.equal(chat.calls[0].speakerKey, 'alexa:speaker-1');
+  assert.match(chat.calls[0].conversationId, /^alexa-[0-9a-f-]{36}$/);
+  assert.equal(chat.calls[1].conversationId, chat.calls[0].conversationId);
+  assert.notEqual(chat.calls[2].conversationId, chat.calls[0].conversationId);
+});
+
+test('a client that keeps its own history (Hermes) gets none from here', async () => {
+  const { assistant, chat } = setup({ keepsHistory: true });
+  await assistant.ask('s', 'q1');
+  await assistant.ask('s', 'q2');
+  assert.deepEqual(chat.calls[1].history, []);
+  assert.equal(chat.calls[1].question, 'q2');
+});
+
+test('speakers do not share history', async () => {
   const { assistant, chat } = setup();
   await assistant.ask('a', 'secret of a');
   await assistant.ask('b', 'question of b');
   assert.equal(chat.calls[1].messages.length, 2);
+});
+
+test('the conversation ends after the idle time and a new one begins', async () => {
+  let nowMs = Date.parse('2026-10-03T05:00:00Z');
+  const { assistant, chat } = setup({ now: () => nowMs, config: { conversationIdleMs: 15 * 60_000 } });
+  await assistant.ask('s', 'q1');
+  nowMs += 14 * 60_000;
+  await assistant.ask('s', 'q2');
+  assert.equal(chat.calls[1].history.length, 2);
+  nowMs += 16 * 60_000;
+  await assistant.ask('s', 'q3');
+  assert.equal(chat.calls[2].history.length, 0);
+  assert.notEqual(chat.calls[2].conversationId, chat.calls[1].conversationId);
+});
+
+test('start over forgets the conversation', async () => {
+  const { assistant, chat } = setup();
+  await assistant.ask('s', 'q1');
+  assistant.startOver('s');
+  await assistant.ask('s', 'q2');
+  assert.equal(chat.calls[1].history.length, 0);
+  assert.notEqual(chat.calls[1].conversationId, chat.calls[0].conversationId);
 });
 
 test('a slow answer becomes pending, says "let me think" once, and is delivered on resume', async () => {
@@ -70,6 +116,19 @@ test('a new question drops and cancels the unheard pending one, which never ente
   assert.deepEqual(contents, ['second', 'answer to: second', 'third']);
 });
 
+test('cancelling the pending answer keeps the conversation', async () => {
+  const { assistant, chat } = setup({ delayMs: 200, config: { answerDeadlineMs: 20 } });
+  await assistant.ask('s', 'quick context', { onSlow: null });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal((await assistant.resume('s')).status, 'answered');
+
+  await assistant.ask('s', 'long one');
+  assistant.cancelPending('s');
+  assert.equal(chat.calls[1].signal.aborted, true);
+  assert.deepEqual(await assistant.resume('s'), { status: 'none' });
+  assert.equal(chat.calls[1].conversationId, chat.calls[0].conversationId);
+});
+
 test('a failed answer throws and is not remembered', async () => {
   let fail = true;
   const { assistant, chat } = setup({
@@ -83,14 +142,6 @@ test('a failed answer throws and is not remembered', async () => {
   await assistant.ask('s', 'q2');
   assert.equal(chat.calls[1].messages.length, 2);
   assert.equal(assistant.hasPending('s'), false);
-});
-
-test('ending a session cancels its pending answer and forgets it', async () => {
-  const { assistant, chat } = setup({ delayMs: 200, config: { answerDeadlineMs: 20 } });
-  await assistant.ask('s', 'long');
-  assistant.end('s');
-  assert.equal(chat.calls[0].signal.aborted, true);
-  assert.deepEqual(await assistant.resume('s'), { status: 'none' });
 });
 
 test('history keeps only the most recent turns', async () => {

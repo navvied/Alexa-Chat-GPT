@@ -37,15 +37,16 @@ const client = (options = {}) =>
 test('sends an OpenAI Chat Completions request and returns the reply', async () => {
   received.length = 0;
   respond = json(200, { choices: [{ message: { content: '  Hello there.  ' }, finish_reason: 'stop' }] });
-  const messages = [{ role: 'user', content: 'hi' }];
-  assert.equal(await client({ reasoningEffort: 'low', temperature: 0.5 }).complete(messages), 'Hello there.');
+  const history = [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'reply' }];
+  const reply = await client({ reasoningEffort: 'low', temperature: 0.5 }).reply({ system: 'Be brief.', history, question: 'hi' });
+  assert.equal(reply, 'Hello there.');
 
   const [request] = received;
   assert.equal(request.path, '/v1/chat/completions');
   assert.equal(request.headers.authorization, 'Bearer sk-test');
   assert.deepEqual(request.body, {
     model: 'chat-latest',
-    messages,
+    messages: [{ role: 'system', content: 'Be brief.' }, ...history, { role: 'user', content: 'hi' }],
     max_completion_tokens: 600,
     temperature: 0.5,
     reasoning_effort: 'low',
@@ -55,7 +56,7 @@ test('sends an OpenAI Chat Completions request and returns the reply', async () 
 test('leaves out optional fields and the key when not configured', async () => {
   received.length = 0;
   respond = json(200, { choices: [{ message: { content: [{ type: 'text', text: 'Part one. ' }, { type: 'text', text: 'Part two.' }] } }] });
-  const reply = await client({ apiKey: '', maxOutputTokens: undefined }).complete([{ role: 'user', content: 'hi' }]);
+  const reply = await client({ apiKey: '', maxOutputTokens: undefined }).reply({ system: 's', question: 'hi' });
   assert.equal(reply, 'Part one. Part two.');
   assert.equal(received[0].headers.authorization, undefined);
   assert.deepEqual(Object.keys(received[0].body), ['model', 'messages']);
@@ -63,7 +64,7 @@ test('leaves out optional fields and the key when not configured', async () => {
 
 test('reports HTTP errors with the status and a hint', async () => {
   respond = json(401, { error: { message: 'Incorrect API key provided' } });
-  await assert.rejects(client().complete([]), (error) => {
+  await assert.rejects(client().reply({ system: 's', question: 'q' }), (error) => {
     assert.equal(error.status, 401);
     assert.match(error.message, /HTTP 401 \(check OPENAI_API_KEY\): .*Incorrect API key/);
     return true;
@@ -72,18 +73,18 @@ test('reports HTTP errors with the status and a hint', async () => {
 
 test('reports an empty reply with its finish reason', async () => {
   respond = json(200, { choices: [{ message: { content: '' }, finish_reason: 'length' }] });
-  await assert.rejects(client().complete([]), /empty \(finish_reason: length\)/);
+  await assert.rejects(client().reply({ system: 's', question: 'q' }), /empty \(finish_reason: length\)/);
 });
 
 test('gives up after the timeout', async () => {
   respond = () => {}; // never answers
-  await assert.rejects(client({ timeoutMs: 1_000 }).complete([]), /no reply within 1000 ms/);
+  await assert.rejects(client({ timeoutMs: 1_000 }).reply({ system: 's', question: 'q' }), /no reply within 1000 ms/);
 });
 
 test('can be cancelled', async () => {
   respond = () => {};
   const controller = new AbortController();
-  const pending = client().complete([], { signal: controller.signal });
+  const pending = client().reply({ system: 's', question: 'q', signal: controller.signal });
   setTimeout(() => controller.abort(), 50);
   await assert.rejects(pending, /cancelled/);
 });

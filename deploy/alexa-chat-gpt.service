@@ -14,6 +14,8 @@ WorkingDirectory=/opt/alexa-chat-gpt
 ExecStart=/usr/bin/node --env-file=/opt/alexa-chat-gpt/.env src/main.js
 Restart=on-failure
 RestartSec=3
+# 78 = configuration error (bad .env, or Hermes exposes unsafe tools): fix it, then restart.
+RestartPreventExitStatus=78
 
 # Hardening: the service only needs to read its own files and make network calls.
 NoNewPrivileges=true

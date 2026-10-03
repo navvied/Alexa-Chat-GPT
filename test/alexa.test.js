@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAlexaHandler, createProgressiveSender, SPEECH } from '../src/alexa.js';
+import { createAlexaHandler, createProgressiveSender, speakerKey, SPEECH } from '../src/alexa.js';
 import { createAssistant } from '../src/assistant.js';
-import { ConversationStore } from '../src/conversations.js';
 import { silentLog } from '../src/log.js';
-import { chatIntent, envelope, fakeChat, intent, speechText, testConfig } from './helpers.js';
+import { chatIntent, envelope, fakeChat, intent, speechText, testConfig, testStore } from './helpers.js';
 
 function setup({ reply = () => 'Jakarta is the capital of **Indonesia**.', delayMs = 0, config = {} } = {}) {
   const cfg = testConfig(config);
   const chat = fakeChat(reply, { delayMs });
-  const store = new ConversationStore({ maxHistoryTurns: cfg.maxHistoryTurns, idleMs: cfg.sessionIdleMs, maxSessions: cfg.maxSessions });
+  const store = testStore(cfg);
   const assistant = createAssistant({ chat, store, config: cfg });
   const spoken = [];
   const handler = createAlexaHandler({
@@ -83,15 +82,45 @@ test('an empty query asks the user to repeat', async () => {
   assert.equal(chat.calls.length, 0);
 });
 
-test('stop says goodbye, ends the session and forgets the conversation', async () => {
+test('stop says goodbye and ends the session, but a follow-up later keeps the context', async () => {
   const { handler, chat } = setup();
-  await handler.handle(chatIntent('remember the number seven'));
-  const res = await handler.handle(intent('AMAZON.StopIntent'));
+  await handler.handle(chatIntent('remember the number seven', { sessionId: 'first' }));
+  const res = await handler.handle(intent('AMAZON.StopIntent', {}, { sessionId: 'first' }));
   assert.equal(speechText(res), SPEECH.goodbye);
   assert.equal(res.response.shouldEndSession, true);
 
+  await handler.handle(chatIntent('what number?', { sessionId: 'second' }));
+  assert.equal(chat.calls[1].history.length, 2);
+});
+
+test('start over forgets the conversation', async () => {
+  const { handler, chat } = setup();
+  await handler.handle(chatIntent('remember the number seven'));
+  const res = await handler.handle(intent('AMAZON.StartOverIntent'));
+  assert.equal(speechText(res), escape(SPEECH.startOver));
   await handler.handle(chatIntent('what number?'));
-  assert.equal(chat.calls[1].messages.length, 2);
+  assert.equal(chat.calls[1].history.length, 0);
+});
+
+test('opening the skill again delivers an answer that was still on its way', async () => {
+  const { handler } = setup({ delayMs: 150, config: { answerDeadlineMs: 100 } });
+  await handler.handle(chatIntent('a hard question', { sessionId: 'first' }));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const res = await handler.handle(envelope({ type: 'LaunchRequest' }, { sessionId: 'second' }));
+  assert.equal(speechText(res), 'Jakarta is the capital of Indonesia.');
+});
+
+test('each voice profile gets its own conversation; without one, the account is the speaker', async () => {
+  const { handler, chat } = setup();
+  await handler.handle(chatIntent('i am ana', { personId: 'person-ana' }));
+  await handler.handle(chatIntent('i am budi', { personId: 'person-budi' }));
+  await handler.handle(chatIntent('who am i', { personId: 'person-ana' }));
+  assert.equal(chat.calls[2].history[0].content, 'i am ana');
+  assert.notEqual(chat.calls[0].speakerKey, chat.calls[1].speakerKey);
+
+  const key = speakerKey(envelope({ type: 'LaunchRequest' }, { userId: 'amzn1.ask.account.XYZ' }));
+  assert.match(key, /^alexa:[0-9a-f]{32}$/);
+  assert.ok(!key.includes('XYZ'));
 });
 
 test('help, fallback and unknown intents get spoken answers', async () => {
